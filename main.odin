@@ -1,7 +1,6 @@
 package main
 
 import "core:encoding/hex"
-import "core:fmt"
 import "core:log"
 import "core:mem"
 import "core:os"
@@ -11,7 +10,6 @@ import "core:strings"
 
 import "core:crypto/chacha20poly1305"
 import "core:crypto/ed25519"
-import "core:crypto/hash"
 import "core:crypto/hkdf"
 import "core:crypto/hmac"
 import "core:crypto/kmac"
@@ -449,21 +447,8 @@ test_mac_impl :: proc(test_vectors: ^wycheproof.TestVectors(wycheproof.MacTestGr
 	PREFIX_HMAC :: "HMAC"
 	PREFIX_KMAC :: "KMAC"
 
-	alg_str: string
-	alg: hash.Algorithm
-	is_hmac, is_kmac, ok: bool
-	switch {
-	case strings.has_prefix(test_vectors.algorithm, PREFIX_HMAC):
-		alg_str = strings.trim_prefix(test_vectors.algorithm, PREFIX_HMAC)
-		if alg, ok = hash_name_to_algorithm(alg_str); !ok {
-			return false
-		}
-		alg_str = fmt.aprintf("hmac/%s", strings.to_lower(alg_str))
-		is_hmac = true
-	case strings.has_prefix(test_vectors.algorithm, PREFIX_KMAC):
-		alg_str = strings.to_lower(test_vectors.algorithm)
-		is_kmac = true
-	case:
+	mac_alg, hmac_alg, alg_str, ok := mac_algorithm(test_vectors.algorithm)
+	if !ok {
 		log.errorf("mac: unsupported algorith: %s", test_vectors.algorithm)
 		return false
 	}
@@ -492,10 +477,10 @@ test_mac_impl :: proc(test_vectors: ^wycheproof.TestVectors(wycheproof.MacTestGr
 
 			tag_ := make([]byte, len(test_vector.tag) / 2)
 
-			switch {
-			case is_hmac:
+			#partial switch mac_alg {
+			case .HMAC:
 				ctx: hmac.Context
-				hmac.init(&ctx, alg, key)
+				hmac.init(&ctx, hmac_alg, key)
 				hmac.update(&ctx, msg)
 				if l := hmac.tag_size(&ctx); l == len(tag_) {
 					hmac.final(&ctx, tag_)
@@ -505,16 +490,13 @@ test_mac_impl :: proc(test_vectors: ^wycheproof.TestVectors(wycheproof.MacTestGr
 					hmac.final(&ctx, tmp)
 					copy(tag_, tmp)
 				}
-			case is_kmac:
-				// There are no truncated KMACs in the test vectors.
+			case .KMAC128, .KMAC256:
 				ctx: kmac.Context
-				switch alg_str {
-				case "kmac128":
+				#partial switch mac_alg {
+				case .KMAC128:
 					kmac.init_128(&ctx, key, nil)
-				case "kmac256":
+				case .KMAC256:
 					kmac.init_256(&ctx, key, nil)
-				case:
-					panic("mac: unknown kmac variant")
 				}
 				kmac.update(&ctx, msg)
 				kmac.final(&ctx, tag_)
