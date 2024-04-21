@@ -51,23 +51,42 @@ MAC_ALGORITHM :: enum {
 	HMAC,
 	KMAC128,
 	KMAC256,
+	SIPHASH_1_3,
+	SIPHASH_2_4,
+	SIPHASH_4_8,
 }
 
 mac_algorithm :: proc(alg_str: string) -> (MAC_ALGORITHM, hash.Algorithm, string, bool) {
 	PREFIX_HMAC :: "HMAC"
-	KMAC128 :: "KMAC128"
-	KMAC256 :: "KMAC256"
 
-	switch {
-	case strings.has_prefix(alg_str, PREFIX_HMAC):
+	if strings.has_prefix(alg_str, PREFIX_HMAC) {
 		alg_str_ := strings.trim_prefix(alg_str, PREFIX_HMAC)
 		alg, ok := hash_name_to_algorithm(alg_str_)
 		alg_str_ = fmt.aprintf("hmac/%s", strings.to_lower(alg_str_))
 		return .HMAC, alg, alg_str_, ok
-	case alg_str == KMAC128:
-		return .KMAC128, .Invalid, "kmac128", true
-	case alg_str == KMAC256:
-		return .KMAC256, .Invalid, "kmac256", true
 	}
-	return .Invalid, .Invalid, alg_str, false
+
+	ALG_KMAC128 :: "KMAC128"
+	ALG_KMAC256 :: "KMAC256"
+	ALG_SIPHASH_1_3 :: "SipHash-1-3"
+	ALG_SIPHASH_2_4 :: "SipHash-2-4"
+	ALG_SIPHASH_4_8 :: "SipHash-4-8"
+
+	mac_alg := MAC_ALGORITHM.Invalid
+	ok := true
+	switch alg_str {
+	case ALG_KMAC128:
+		mac_alg = .KMAC128
+	case ALG_KMAC256:
+		mac_alg = .KMAC256
+	case ALG_SIPHASH_1_3:
+		mac_alg = .SIPHASH_1_3
+	case ALG_SIPHASH_2_4:
+		mac_alg = .SIPHASH_2_4
+	case ALG_SIPHASH_4_8:
+		mac_alg = .SIPHASH_4_8
+	case:
+		ok = false
+	}
+	return mac_alg, .Invalid, strings.to_lower(alg_str), ok
 }

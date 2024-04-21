@@ -14,6 +14,7 @@ import "core:crypto/hkdf"
 import "core:crypto/hmac"
 import "core:crypto/kmac"
 import "core:crypto/pbkdf2"
+import "core:crypto/siphash"
 import "core:crypto/x25519"
 
 import "wycheproof"
@@ -50,6 +51,10 @@ import "wycheproof"
 //   - pbkdf2_hmacsha256_test.json
 //   - pbkdf2_hmacsha384_test.json
 //   - pbkdf2_hmacsha512_test.json
+// - crypto/siphash
+//   - siphash_1_3_test.json
+//   - siphash_2_4_test.json
+//   - siphash_4_8_test.json
 // - crypto/x25519
 //   - x25519_test.json
 //
@@ -59,9 +64,6 @@ import "wycheproof"
 // - crypto/legacy/keccak
 // - crypto/legacy/md5
 // - crypto/tuplehash
-//
-// TODO:
-// - crypto/siphash
 
 ARENA_SIZE :: 4 * 1024 * 1024 // There is no kill like overkill.
 
@@ -423,6 +425,9 @@ test_mac :: proc(base_path: string) -> bool {
 		"hmac_sm3_test.json",
 		"kmac128_no_customization_test.json",
 		"kmac256_no_customization_test.json",
+		"siphash_1_3_test.json",
+		"siphash_2_4_test.json",
+		"siphash_4_8_test.json",
 	}
 
 	allOk := true
@@ -500,6 +505,12 @@ test_mac_impl :: proc(test_vectors: ^wycheproof.TestVectors(wycheproof.MacTestGr
 				}
 				kmac.update(&ctx, msg)
 				kmac.final(&ctx, tag_)
+			case .SIPHASH_1_3:
+				siphash.sum_1_3(msg, key, tag_)
+			case .SIPHASH_2_4:
+				siphash.sum_2_4(msg, key, tag_)
+			case .SIPHASH_4_8:
+				siphash.sum_4_8(msg, key, tag_)
 			}
 
 			ok = wycheproof.hexbytes_compare(test_vector.tag, tag_)
