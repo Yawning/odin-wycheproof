@@ -586,7 +586,7 @@ test_pbkdf2_impl :: proc(
 	}
 	alg_str = strings.to_lower(alg_str)
 
-	log.debugf("pbkdf2/%s: starting", alg_str)
+	log.debugf("pbkdf2/hmac-%s: starting", alg_str)
 
 	num_ran, num_passed, num_failed, num_skipped: int
 	for &test_group in test_vectors.test_groups {
@@ -595,19 +595,19 @@ test_pbkdf2_impl :: proc(
 
 			if comment := test_vector.comment; comment != "" {
 				log.debugf(
-					"pbkdf2/%s/%d: %s: %+v",
+					"pbkdf2/hmac-%s/%d: %s: %+v",
 					alg_str,
 					test_vector.tc_id,
 					comment,
 					test_vector.flags,
 				)
 			} else {
-				log.debugf("pbkdf2/%s/%d: %+v", alg_str, test_vector.tc_id, test_vector.flags)
+				log.debugf("pbkdf2/hmac-%s/%d: %+v", alg_str, test_vector.tc_id, test_vector.flags)
 			}
 
 			if slice.contains(test_vector.flags, FLAG_LARGE_ITERATION_COUNT) {
 				log.infof(
-					"pbkdf/%s/%d: skipped, takes fucking forever",
+					"pbkdf2/hmac-%s/%d: skipped, takes fucking forever",
 					alg_str,
 					test_vector.tc_id,
 				)
@@ -625,7 +625,7 @@ test_pbkdf2_impl :: proc(
 			if !wycheproof.result_check(test_vector.result, ok) {
 				x := transmute(string)(hex.encode(dk_))
 				log.errorf(
-					"pbkdf/%s/%d: shared: expected %s actual %s",
+					"pbkdf2/hmac-%s/%d: shared: expected %s actual %s",
 					alg_str,
 					test_vector.tc_id,
 					test_vector.dk,
