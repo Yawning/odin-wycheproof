@@ -6,6 +6,8 @@ import "core:log"
 import "core:os"
 import "core:strings"
 
+panic_fn :: proc(arg: any)
+
 env_to_log_level :: proc() -> log.Level {
 	switch s := os.get_env("ODIN_LOG"); s {
 	case "debug":
