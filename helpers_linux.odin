@@ -55,12 +55,12 @@ case_should_panic :: proc(fn: panic_fn, fn_arg: any, panic_str: string) -> bool 
 	buf: [PIPE_BUF]byte
 	n, _ := linux.read(stderr_pipe[0], buf[:])
 	if n == 0 {
-		log.debugf("child stderr empty")
+		log.errorf("panic_case: child stderr empty")
 		return false
 	}
 	s := string(buf[:n])
 
-	log.debugf("child stderr: '%s'", s)
+	log.debugf("panic case: child stderr: '%s'", s)
 
 	return strings.contains(s, panic_str)
 }
