@@ -8,6 +8,7 @@ import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 
+import "core:crypto/aes"
 import "core:crypto/chacha20poly1305"
 import "core:crypto/ed25519"
 import "core:crypto/hkdf"
@@ -20,6 +21,8 @@ import "core:crypto/x25519"
 import "wycheproof"
 
 // Covered:
+// - crypto/aes
+//   - aes_gcm_test.json
 // - crypto/chacha20poly1305
 //   - chacha20_poly1305_test.json
 // - crypto/ed25519
@@ -101,6 +104,7 @@ main :: proc() {
 	// Run the tests.
 	all_ok := true
 	test_fns := []test_proc {
+		test_aead_aes_gcm,
 		test_aead_chacha20_poly1305,
 		test_eddsa_ed25519,
 		test_hkdf,
@@ -120,6 +124,121 @@ main :: proc() {
 }
 
 test_proc :: proc(_: string) -> bool
+
+test_aead_aes_gcm :: proc(base_path: string) -> bool {
+	fn := filepath.join([]string{base_path, "aes_gcm_test.json"})
+
+	log.debug("aead/aes-gcm: starting")
+
+	test_vectors: wycheproof.TestVectors(wycheproof.AeadTestGroup)
+	if !wycheproof.load(&test_vectors, fn) {
+		return false
+	}
+
+	num_ran, num_passed, num_failed, num_skipped: int
+	for &test_group in test_vectors.test_groups {
+		for &test_vector in test_group.tests {
+			num_ran += 1
+
+			if comment := test_vector.comment; comment != "" {
+				log.debugf(
+					"aead/aes-gcm/%d: %s: %+v",
+					test_vector.tc_id,
+					comment,
+					test_vector.flags,
+				)
+			} else {
+				log.debugf("aead/aes-gcm/%d: %+v", test_vector.tc_id, test_vector.flags)
+			}
+
+			key := wycheproof.hexbytes_decode(test_vector.key)
+			iv := wycheproof.hexbytes_decode(test_vector.iv)
+			aad := wycheproof.hexbytes_decode(test_vector.aad)
+			msg := wycheproof.hexbytes_decode(test_vector.msg)
+			ct := wycheproof.hexbytes_decode(test_vector.ct)
+			tag := wycheproof.hexbytes_decode(test_vector.tag)
+
+			if len(iv) != aes.GCM_NONCE_SIZE {
+				log.infof(
+					"aead/aes-gcm/%d: skipped, invalid nonces panic",
+					test_vector.tc_id,
+				)
+				num_skipped += 1
+				continue
+			}
+
+			ctx: aes.Context_GCM
+			aes.init_gcm(&ctx, key)
+
+			if wycheproof.result_is_valid(test_vector.result) {
+				ct_ := make([]byte, len(ct))
+				tag_ := make([]byte, len(tag))
+				aes.seal_gcm(&ctx, ct_, tag_, iv, aad, msg)
+
+				ok := wycheproof.hexbytes_compare(test_vector.ct, ct_)
+				if !wycheproof.result_check(test_vector.result, ok) {
+					x := transmute(string)(hex.encode(ct_))
+					log.errorf(
+						"aead/aes-gcm/%d: ciphertext: expected %s actual %s",
+						test_vector.tc_id,
+						test_vector.ct,
+						x,
+					)
+					num_failed += 1
+					continue
+				}
+
+				ok = wycheproof.hexbytes_compare(test_vector.tag, tag_)
+				if !wycheproof.result_check(test_vector.result, ok) {
+					x := transmute(string)(hex.encode(tag_))
+					log.errorf(
+						"aead/aes-gcm/%d: tag: expected %s actual %s",
+						test_vector.tc_id,
+						test_vector.tag,
+						x,
+					)
+					num_failed += 1
+					continue
+				}
+			}
+
+			msg_ := make([]byte, len(msg))
+			ok := aes.open_gcm(&ctx, msg_, iv, aad, ct, tag)
+			if !wycheproof.result_check(test_vector.result, ok) {
+				log.errorf("aead/aes-gcm/%d: decrypt failed", test_vector.tc_id)
+				num_failed += 1
+				continue
+			}
+
+			if ok && !wycheproof.hexbytes_compare(test_vector.msg, msg_) {
+				x := transmute(string)(hex.encode(msg_))
+				log.errorf(
+					"aead/aes-gcm/%d: decrypt msg: expected %s actual %s",
+					test_vector.tc_id,
+					test_vector.msg,
+					x,
+				)
+				num_failed += 1
+				continue
+			}
+
+			num_passed += 1
+		}
+	}
+
+	assert(num_ran == test_vectors.number_of_tests)
+	assert(num_passed + num_failed + num_skipped == num_ran)
+
+	log.infof(
+		"aead/aes-gcm: ran %d, passed %d, failed %d, skipped %d",
+		num_ran,
+		num_passed,
+		num_failed,
+		num_skipped,
+	)
+
+	return num_failed == 0
+}
 
 test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 	FLAG_INVALID_NONCE_SIZE :: "InvalidNonceSize"
