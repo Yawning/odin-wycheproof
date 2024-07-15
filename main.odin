@@ -158,7 +158,7 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 			ct := wycheproof.hexbytes_decode(test_vector.ct)
 			tag := wycheproof.hexbytes_decode(test_vector.tag)
 
-			if len(iv) != aes.GCM_NONCE_SIZE {
+			if len(iv) == 0 {
 				log.infof(
 					"aead/aes-gcm/%d: skipped, invalid nonces panic",
 					test_vector.tc_id,
