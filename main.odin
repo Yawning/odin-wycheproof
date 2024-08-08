@@ -8,7 +8,10 @@ import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 
+import chacha_simd128 "core:crypto/_chacha20/simd128"
+import chacha_simd256 "core:crypto/_chacha20/simd256"
 import "core:crypto/aes"
+import "core:crypto/chacha20"
 import "core:crypto/chacha20poly1305"
 import "core:crypto/ed25519"
 import "core:crypto/hkdf"
@@ -25,6 +28,7 @@ import "wycheproof"
 //   - aes_gcm_test.json
 // - crypto/chacha20poly1305
 //   - chacha20_poly1305_test.json
+//   - xchacha20_poly1305_test.json
 // - crypto/ed25519
 //   - ed25519_test.json
 // - crypto/hkdf
@@ -125,6 +129,16 @@ main :: proc() {
 
 test_proc :: proc(_: string) -> bool
 
+supported_aes_impls :: proc() -> [dynamic]aes.Implementation {
+	impls := make([dynamic]aes.Implementation, 0, 2)
+	append(&impls, aes.Implementation.Portable)
+	if aes.is_hardware_accelerated() {
+		append(&impls, aes.Implementation.Hardware)
+	}
+
+	return impls
+}
+
 test_aead_aes_gcm :: proc(base_path: string) -> bool {
 	fn := filepath.join([]string{base_path, "aes_gcm_test.json"})
 
@@ -135,6 +149,21 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 		return false
 	}
 
+	for impl in supported_aes_impls() {
+		if !test_aead_aes_gcm_impl(&test_vectors, impl) {
+			return false
+		}
+	}
+
+	return true
+}
+
+test_aead_aes_gcm_impl :: proc(
+	test_vectors: ^wycheproof.TestVectors(wycheproof.AeadTestGroup),
+	impl: aes.Implementation,
+) -> bool {
+	log.debug("aead/aes-gcm/%v: starting", impl)
+
 	num_ran, num_passed, num_failed, num_skipped: int
 	for &test_group in test_vectors.test_groups {
 		for &test_vector in test_group.tests {
@@ -142,13 +171,18 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 
 			if comment := test_vector.comment; comment != "" {
 				log.debugf(
-					"aead/aes-gcm/%d: %s: %+v",
+					"aead/aes-gcm/%v/%d: %s: %+v",
+					impl,
 					test_vector.tc_id,
 					comment,
 					test_vector.flags,
 				)
 			} else {
-				log.debugf("aead/aes-gcm/%d: %+v", test_vector.tc_id, test_vector.flags)
+				log.debugf("aead/aes-gcm/%v/%d: %+v",
+					impl,
+					test_vector.tc_id,
+					test_vector.flags,
+				)
 			}
 
 			key := wycheproof.hexbytes_decode(test_vector.key)
@@ -160,7 +194,8 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 
 			if len(iv) == 0 {
 				log.infof(
-					"aead/aes-gcm/%d: skipped, invalid nonces panic",
+					"aead/aes-gcm/%v/%d: skipped, invalid IVs panic",
+					impl,
 					test_vector.tc_id,
 				)
 				num_skipped += 1
@@ -168,7 +203,7 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 			}
 
 			ctx: aes.Context_GCM
-			aes.init_gcm(&ctx, key)
+			aes.init_gcm(&ctx, key, impl)
 
 			if wycheproof.result_is_valid(test_vector.result) {
 				ct_ := make([]byte, len(ct))
@@ -179,7 +214,8 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 				if !wycheproof.result_check(test_vector.result, ok) {
 					x := transmute(string)(hex.encode(ct_))
 					log.errorf(
-						"aead/aes-gcm/%d: ciphertext: expected %s actual %s",
+						"aead/aes-gcm/%v/%d: ciphertext: expected %s actual %s",
+						impl,
 						test_vector.tc_id,
 						test_vector.ct,
 						x,
@@ -192,7 +228,8 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 				if !wycheproof.result_check(test_vector.result, ok) {
 					x := transmute(string)(hex.encode(tag_))
 					log.errorf(
-						"aead/aes-gcm/%d: tag: expected %s actual %s",
+						"aead/aes-gcm/%v/%d: tag: expected %s actual %s",
+						impl,
 						test_vector.tc_id,
 						test_vector.tag,
 						x,
@@ -205,7 +242,7 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 			msg_ := make([]byte, len(msg))
 			ok := aes.open_gcm(&ctx, msg_, iv, aad, ct, tag)
 			if !wycheproof.result_check(test_vector.result, ok) {
-				log.errorf("aead/aes-gcm/%d: decrypt failed", test_vector.tc_id)
+				log.errorf("aead/aes-gcm/%v/%d: decrypt failed", impl, test_vector.tc_id)
 				num_failed += 1
 				continue
 			}
@@ -213,7 +250,8 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 			if ok && !wycheproof.hexbytes_compare(test_vector.msg, msg_) {
 				x := transmute(string)(hex.encode(msg_))
 				log.errorf(
-					"aead/aes-gcm/%d: decrypt msg: expected %s actual %s",
+					"aead/aes-gcm/%v/%d: decrypt msg: expected %s actual %s",
+					impl,
 					test_vector.tc_id,
 					test_vector.msg,
 					x,
@@ -240,17 +278,55 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 	return num_failed == 0
 }
 
+supported_chacha_impls :: proc() -> [dynamic]chacha20.Implementation {
+	impls := make([dynamic]chacha20.Implementation, 0, 3)
+	append(&impls, chacha20.Implementation.Portable)
+	if chacha_simd128.is_performant() {
+		append(&impls, chacha20.Implementation.Simd128)
+	}
+	if chacha_simd256.is_performant() {
+		append(&impls, chacha20.Implementation.Simd256)
+	}
+
+	return impls
+}
+
 test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
+	files := []string {
+		"chacha20_poly1305_test.json",
+		"xchacha20_poly1305_test.json",
+	}
+
+	log.debug("aead/(x)chacha20poly1305: starting")
+
+	allOk := true
+	for f, i in files {
+		mem.free_all() // Probably don't need this, but be safe.
+
+		fn := filepath.join([]string{base_path, f})
+
+		test_vectors: wycheproof.TestVectors(wycheproof.AeadTestGroup)
+		if !wycheproof.load(&test_vectors, fn) {
+			allOk &= false
+			continue
+		}
+
+		for impl in supported_chacha_impls() {
+			allOk &= test_aead_chacha20_poly1305_impl(&test_vectors, i == 1, impl)
+		}
+	}
+
+	return allOk
+}
+
+test_aead_chacha20_poly1305_impl :: proc(
+	test_vectors: ^wycheproof.TestVectors(wycheproof.AeadTestGroup),
+	is_xchacha: bool,
+	impl: chacha20.Implementation,
+) -> bool {
 	FLAG_INVALID_NONCE_SIZE :: "InvalidNonceSize"
 
-	fn := filepath.join([]string{base_path, "chacha20_poly1305_test.json"})
-
-	log.debug("aead/chacha20poly1305: starting")
-
-	test_vectors: wycheproof.TestVectors(wycheproof.AeadTestGroup)
-	if !wycheproof.load(&test_vectors, fn) {
-		return false
-	}
+	alg_str := is_xchacha ? "xchacha20poly1305" : "chacha20poly1305"
 
 	num_ran, num_passed, num_failed, num_skipped: int
 	for &test_group in test_vectors.test_groups {
@@ -259,13 +335,20 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 
 			if comment := test_vector.comment; comment != "" {
 				log.debugf(
-					"aead/chacha20poly1305/%d: %s: %+v",
+					"aead/%s/%v/%d: %s: %+v",
+					alg_str,
+					impl,
 					test_vector.tc_id,
 					comment,
 					test_vector.flags,
 				)
 			} else {
-				log.debugf("aead/chacha20poly1305/%d: %+v", test_vector.tc_id, test_vector.flags)
+				log.debugf("aead/%s/%v/%d: %+v",
+					alg_str,
+					impl,
+					test_vector.tc_id,
+					test_vector.flags,
+				)
 			}
 
 			key := wycheproof.hexbytes_decode(test_vector.key)
@@ -277,23 +360,35 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 
 			if slice.contains(test_vector.flags, FLAG_INVALID_NONCE_SIZE) {
 				log.infof(
-					"aead/chacha20poly1305/%d: skipped, invalid nonces panic",
+					"aead/%s/%v/%d: skipped, invalid nonces panic",
+					alg_str,
+					impl,
 					test_vector.tc_id,
 				)
 				num_skipped += 1
 				continue
 			}
 
+			ctx: chacha20poly1305.Context
+			switch is_xchacha {
+			case true:
+				chacha20poly1305.init_xchacha(&ctx, key, impl)
+			case false:
+				chacha20poly1305.init(&ctx, key, impl)
+			}
+
 			if wycheproof.result_is_valid(test_vector.result) {
 				ct_ := make([]byte, len(ct))
 				tag_ := make([]byte, len(tag))
-				chacha20poly1305.encrypt(ct_, tag_, key, iv, aad, msg)
+				chacha20poly1305.seal(&ctx, ct_, tag_, iv, aad, msg)
 
 				ok := wycheproof.hexbytes_compare(test_vector.ct, ct_)
 				if !wycheproof.result_check(test_vector.result, ok) {
 					x := transmute(string)(hex.encode(ct_))
 					log.errorf(
-						"aead/chacha20poly1305/%d: ciphertext: expected %s actual %s",
+						"aead/%s/%v/%d: ciphertext: expected %s actual %s",
+						alg_str,
+						impl,
 						test_vector.tc_id,
 						test_vector.ct,
 						x,
@@ -306,7 +401,9 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 				if !wycheproof.result_check(test_vector.result, ok) {
 					x := transmute(string)(hex.encode(tag_))
 					log.errorf(
-						"aead/chacha20poly1305/%d: tag: expected %s actual %s",
+						"aead/%s/%v/%d: tag: expected %s actual %s",
+						alg_str,
+						impl,
 						test_vector.tc_id,
 						test_vector.tag,
 						x,
@@ -317,9 +414,14 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 			}
 
 			msg_ := make([]byte, len(msg))
-			ok := chacha20poly1305.decrypt(msg_, tag, key, iv, aad, ct)
+			// ok := chacha20poly1305.decrypt(msg_, tag, key, iv, aad, ct)
+			ok := chacha20poly1305.open(&ctx, msg_, iv, aad, ct, tag)
 			if !wycheproof.result_check(test_vector.result, ok) {
-				log.errorf("aead/chacha20poly1305/%d: decrypt failed", test_vector.tc_id)
+				log.errorf("aead/%s/%v/%d: decrypt failed",
+					alg_str,
+					impl,
+					test_vector.tc_id,
+				)
 				num_failed += 1
 				continue
 			}
@@ -327,7 +429,9 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 			if ok && !wycheproof.hexbytes_compare(test_vector.msg, msg_) {
 				x := transmute(string)(hex.encode(msg_))
 				log.errorf(
-					"aead/chacha20poly1305/%d: decrypt msg: expected %s actual %s",
+					"aead/%s/%v/%d: decrypt msg: expected %s actual %s",
+					alg_str,
+					impl,
 					test_vector.tc_id,
 					test_vector.msg,
 					x,
@@ -344,7 +448,9 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 	assert(num_passed + num_failed + num_skipped == num_ran)
 
 	log.infof(
-		"aead/chacha20poly1305: ran %d, passed %d, failed %d, skipped %d",
+		"aead/%s/%v: ran %d, passed %d, failed %d, skipped %d",
+		alg_str,
+		impl,
 		num_ran,
 		num_passed,
 		num_failed,
