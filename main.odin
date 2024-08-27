@@ -20,6 +20,7 @@ import "core:crypto/kmac"
 import "core:crypto/pbkdf2"
 import "core:crypto/siphash"
 import "core:crypto/x25519"
+import "core:crypto/x448"
 
 import "wycheproof"
 
@@ -64,6 +65,8 @@ import "wycheproof"
 //   - siphash_4_8_test.json
 // - crypto/x25519
 //   - x25519_test.json
+// - crypto/x448
+//   - x448_test.json
 //
 // Not covered (not in wycheproof):
 // - crypto/blake2b
@@ -73,6 +76,7 @@ import "wycheproof"
 // - crypto/tuplehash
 
 ARENA_SIZE :: 4 * 1024 * 1024 // There is no kill like overkill.
+SUFFIX_TEST_JSON :: "_test.json"
 
 main :: proc() {
 	context.logger = log.create_console_logger(lowest = env_to_log_level())
@@ -114,7 +118,7 @@ main :: proc() {
 		test_hkdf,
 		test_mac,
 		test_pbkdf2,
-		test_xdh_x25519,
+		test_xdh,
 	}
 	for fn in test_fns {
 		all_ok &= fn(base_path)
@@ -879,15 +883,41 @@ test_pbkdf2_impl :: proc(
 	return num_failed == 0
 }
 
-test_xdh_x25519 :: proc(base_path: string) -> bool {
-	fn := filepath.join([]string{base_path, "x25519_test.json"})
-
-	log.debug("xdh/x25519: starting")
-
-	test_vectors: wycheproof.TestVectors(wycheproof.XdhTestGroup)
-	if !wycheproof.load(&test_vectors, fn) {
-		return false
+test_xdh :: proc(base_path: string) -> bool {
+	files := []string {
+		"x25519_test.json",
+		"x448_test.json",
 	}
+
+	allOk := true
+	for f in files {
+		mem.free_all() // Probably don't need this, but be safe.
+
+		fn := filepath.join([]string{base_path, f})
+
+		test_vectors: wycheproof.TestVectors(wycheproof.XdhTestGroup)
+		if !wycheproof.load(&test_vectors, fn) {
+			allOk &= false
+			continue
+		}
+
+		alg_str := strings.trim_suffix(f, SUFFIX_TEST_JSON)
+		allOk &= test_xdh_impl(&test_vectors, alg_str)
+	}
+
+	return allOk
+}
+
+test_xdh_impl :: proc(
+	test_vectors: ^wycheproof.TestVectors(wycheproof.XdhTestGroup),
+	alg_str: string,
+) -> bool {
+	ALG_X25519 :: "x25519"
+	ALG_X448 :: "x448"
+
+	FLAG_PUBLIC_KEY_TOO_LONG :: "PublicKeyTooLong"
+
+	log.debugf("xdh/%s: starting", alg_str)
 
 	num_ran, num_passed, num_failed, num_skipped: int
 	for &test_group in test_vectors.test_groups {
@@ -895,25 +925,46 @@ test_xdh_x25519 :: proc(base_path: string) -> bool {
 			num_ran += 1
 
 			if comment := test_vector.comment; comment != "" {
-				log.debugf("xdh/x25519/%d: %s: %+v", test_vector.tc_id, comment, test_vector.flags)
+				log.debugf("xdh/%s/%d: %s: %+v", alg_str, test_vector.tc_id, comment, test_vector.flags)
 			} else {
-				log.debugf("xdh/x25519/%d: %+v", test_vector.tc_id, test_vector.flags)
+				log.debugf("xdh/%s/%d: %+v", alg_str, test_vector.tc_id, test_vector.flags)
 			}
 
 			pub := wycheproof.hexbytes_decode(test_vector.public)
 			private := wycheproof.hexbytes_decode(test_vector.private)
-			shared := make([]byte, x25519.POINT_SIZE)
+			shared: []byte
 
-			x25519.scalarmult(shared, private, pub)
+			if slice.contains(test_vector.flags, FLAG_PUBLIC_KEY_TOO_LONG) {
+				log.infof(
+					"xdh/%s/%d: skipped, invalid sizes panic",
+					alg_str,
+					test_vector.tc_id,
+				)
+				num_skipped += 1
+				continue
+			}
 
-			// We have a very forgiving X25519 implementation, that
+			switch alg_str {
+			case ALG_X25519:
+				shared = make([]byte, x25519.POINT_SIZE)
+				x25519.scalarmult(shared, private, pub)
+			case ALG_X448:
+				shared = make([]byte, x448.POINT_SIZE)
+				x448.scalarmult(shared, private, pub)
+			case:
+				log.errorf("unsupported algorithm: %s", alg_str)
+				return false
+			}
+
+			// We have a very forgiving XDH implementation, that
 			// intentionally omits the all-zero check, so `acceptable`
 			// is treated as valid for the purpose of these tests.
 			ok := wycheproof.hexbytes_compare(test_vector.shared, shared)
 			if !wycheproof.result_check(test_vector.result, ok, false) {
 				x := transmute(string)(hex.encode(shared))
 				log.errorf(
-					"xdh/x25519/%d: shared: expected %s actual %s",
+					"xdh/%s/%d: shared: expected %s actual %s",
+					alg_str,
 					test_vector.tc_id,
 					test_vector.shared,
 					x,
@@ -930,7 +981,8 @@ test_xdh_x25519 :: proc(base_path: string) -> bool {
 	assert(num_passed + num_failed + num_skipped == num_ran)
 
 	log.infof(
-		"xdh/x25519: ran %d, passed %d, failed %d, skipped %d",
+		"xdh/%s: ran %d, passed %d, failed %d, skipped %d",
+		alg_str,
 		num_ran,
 		num_passed,
 		num_failed,
