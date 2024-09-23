@@ -140,7 +140,7 @@ test_proc :: proc(_: string) -> bool
 
 supported_aegis_impls :: proc() -> [dynamic]aes.Implementation {
 	impls := make([dynamic]aes.Implementation, 0, 2, context.temp_allocator)
-	// append(&impls, aes.Implementation.Portable)
+	append(&impls, aes.Implementation.Portable)
 	if aegis.is_hardware_accelerated() {
 		append(&impls, aes.Implementation.Hardware)
 	}

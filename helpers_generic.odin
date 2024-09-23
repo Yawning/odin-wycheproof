@@ -1,4 +1,4 @@
-//+build !linux
+#+build !linux
 package main
 
 case_should_panic :: proc(fn: panic_fn, fn_arg: any, panic_str: string) -> bool {
