@@ -109,7 +109,7 @@ HkdfTestVector :: struct {
 	salt:    HexBytes `json:"salt"`,
 	info:    HexBytes `json:"info"`,
 	size:    int `json:"size"`,
-	okm:     HexBytes `json:"ikm"`,
+	okm:     HexBytes `json:"okm"`,
 	result:  Result `json:"result"`,
 	flags:   []string `json:"flags"`,
 }
