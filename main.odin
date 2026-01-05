@@ -14,14 +14,14 @@ import "core:crypto/aegis"
 import "core:crypto/aes"
 import "core:crypto/chacha20"
 import "core:crypto/chacha20poly1305"
+import "core:crypto/ecdh"
 import "core:crypto/ed25519"
 import "core:crypto/hkdf"
 import "core:crypto/hmac"
 import "core:crypto/kmac"
 import "core:crypto/pbkdf2"
 import "core:crypto/siphash"
-import "core:crypto/x25519"
-import "core:crypto/x448"
+import "core:crypto/deoxysii"
 
 import "wycheproof"
 
@@ -71,6 +71,8 @@ import "wycheproof"
 //   - x25519_test.json
 // - crypto/x448
 //   - x448_test.json
+// - crypto/_weierstrass
+//   - ecdh_secp256r1_ecpoint_test.json
 //
 // Not covered (not in wycheproof):
 // - crypto/blake2b
@@ -119,11 +121,12 @@ main :: proc() {
 		test_aead_aegis,
 		test_aead_aes_gcm,
 		test_aead_chacha20_poly1305,
+		test_aead_deoxysii,
 		test_eddsa_ed25519,
 		test_hkdf,
 		test_mac,
 		test_pbkdf2,
-		test_xdh,
+		test_ecdh,
 	}
 	for fn in test_fns {
 		all_ok &= fn(base_path)
@@ -581,7 +584,6 @@ test_aead_chacha20_poly1305_impl :: proc(
 			}
 
 			msg_ := make([]byte, len(msg))
-			// ok := chacha20poly1305.decrypt(msg_, tag, key, iv, aad, ct)
 			ok := chacha20poly1305.open(&ctx, msg_, iv, aad, ct, tag)
 			if !wycheproof.result_check(test_vector.result, ok) {
 				log.errorf("aead/%s/%v/%d: decrypt failed",
@@ -625,6 +627,19 @@ test_aead_chacha20_poly1305_impl :: proc(
 	)
 
 	return num_failed == 0
+}
+
+test_aead_deoxysii :: proc(base_path: string) -> bool {
+	ctx: deoxysii.Context
+
+	key: [deoxysii.KEY_SIZE]byte
+	iv: [deoxysii.IV_SIZE]byte
+	tag: [deoxysii.TAG_SIZE]byte
+	buf: [4096]byte
+
+	deoxysii.init(&ctx, key[:])
+	deoxysii.seal(&ctx, buf[:], tag[:], iv[:], nil, buf[:])
+	return deoxysii.open(&ctx, buf[:], iv[:], nil, buf[:], tag[:])
 }
 
 test_eddsa_ed25519 :: proc(base_path: string) -> bool {
@@ -1046,8 +1061,12 @@ test_pbkdf2_impl :: proc(
 	return num_failed == 0
 }
 
-test_xdh :: proc(base_path: string) -> bool {
+test_ecdh :: proc(base_path: string) -> bool {
+	PREFIX_TEST_ECDH :: "ecdh_"
+	SUFFIX_TEST_ECPOINT :: "_ecpoint"
+
 	files := []string {
+		"ecdh_secp256r1_ecpoint_test.json",
 		"x25519_test.json",
 		"x448_test.json",
 	}
@@ -1058,29 +1077,39 @@ test_xdh :: proc(base_path: string) -> bool {
 
 		fn := filepath.join([]string{base_path, f})
 
-		test_vectors: wycheproof.TestVectors(wycheproof.XdhTestGroup)
+		test_vectors: wycheproof.TestVectors(wycheproof.EcdhTestGroup)
 		if !wycheproof.load(&test_vectors, fn) {
 			allOk &= false
 			continue
 		}
 
 		alg_str := strings.trim_suffix(f, SUFFIX_TEST_JSON)
-		allOk &= test_xdh_impl(&test_vectors, alg_str)
+		alg_str = strings.trim_suffix(alg_str, SUFFIX_TEST_ECPOINT)
+		alg_str = strings.trim_prefix(alg_str, PREFIX_TEST_ECDH)
+		allOk &= test_ecdh_impl(&test_vectors, alg_str)
 	}
 
 	return allOk
 }
 
-test_xdh_impl :: proc(
-	test_vectors: ^wycheproof.TestVectors(wycheproof.XdhTestGroup),
+test_ecdh_impl :: proc(
+	test_vectors: ^wycheproof.TestVectors(wycheproof.EcdhTestGroup),
 	alg_str: string,
 ) -> bool {
+	ALG_P256 :: "secp256r1"
 	ALG_X25519 :: "x25519"
 	ALG_X448 :: "x448"
 
+	// XDH exceptions
 	FLAG_PUBLIC_KEY_TOO_LONG :: "PublicKeyTooLong"
+	FLAG_ZERO_SHARED_SECRET :: "ZeroSharedSecret"
 
-	log.debugf("xdh/%s: starting", alg_str)
+	// ECDH exceptions
+	FLAG_COMPRESSED_POINT :: "CompressedPoint"
+	FLAG_INVALID_CURVE :: "InvalidCurveAttack"
+	FLAG_INVALID_ENCODING :: "InvalidEncoding"
+
+	log.debugf("ecdh/%s: starting", alg_str)
 
 	num_ran, num_passed, num_failed, num_skipped: int
 	for &test_group in test_vectors.test_groups {
@@ -1088,18 +1117,17 @@ test_xdh_impl :: proc(
 			num_ran += 1
 
 			if comment := test_vector.comment; comment != "" {
-				log.debugf("xdh/%s/%d: %s: %+v", alg_str, test_vector.tc_id, comment, test_vector.flags)
+				log.debugf("ecdh/%s/%d: %s: %+v", alg_str, test_vector.tc_id, comment, test_vector.flags)
 			} else {
-				log.debugf("xdh/%s/%d: %+v", alg_str, test_vector.tc_id, test_vector.flags)
+				log.debugf("ecdh/%s/%d: %+v", alg_str, test_vector.tc_id, test_vector.flags)
 			}
 
-			pub := wycheproof.hexbytes_decode(test_vector.public)
-			private := wycheproof.hexbytes_decode(test_vector.private)
-			shared: []byte
+			raw_pub := wycheproof.hexbytes_decode(test_vector.public)
+			raw_priv := wycheproof.hexbytes_decode(test_vector.private)
 
 			if slice.contains(test_vector.flags, FLAG_PUBLIC_KEY_TOO_LONG) {
 				log.infof(
-					"xdh/%s/%d: skipped, invalid sizes panic",
+					"ecdh/%s/%d: skipped, invalid sizes panic",
 					alg_str,
 					test_vector.tc_id,
 				)
@@ -1107,26 +1135,101 @@ test_xdh_impl :: proc(
 				continue
 			}
 
+			curve: ecdh.Curve
+			priv_key: ecdh.Private_Key
+			pub_key: ecdh.Public_Key
+
+			is_nist, is_xdh: bool
 			switch alg_str {
+			case ALG_P256:
+				curve = .SECP256R1
+				// Ugh, ASN.1 :(
+				l := len(raw_priv)
+				if l == 33 {
+					if raw_priv[0] == 0 {
+						raw_priv = raw_priv[1:]
+					}
+				} else if l < 32 {
+					// left-pad.odin
+					tmp := make([]byte, 32)
+					copy(tmp[32-l:], raw_priv)
+					raw_priv = tmp
+				}
+				is_nist = true
 			case ALG_X25519:
-				shared = make([]byte, x25519.POINT_SIZE)
-				x25519.scalarmult(shared, private, pub)
+				curve = .X25519
+				is_xdh = true
 			case ALG_X448:
-				shared = make([]byte, x448.POINT_SIZE)
-				x448.scalarmult(shared, private, pub)
+				curve = .X448
+				is_xdh = true
 			case:
-				log.errorf("unsupported algorithm: %s", alg_str)
+				log.errorf("ecdh: unsupported algorithm: %s", alg_str)
 				return false
 			}
 
-			// We have a very forgiving XDH implementation, that
-			// intentionally omits the all-zero check, so `acceptable`
-			// is treated as valid for the purpose of these tests.
-			ok := wycheproof.hexbytes_compare(test_vector.shared, shared)
+			if ok := ecdh.private_key_set_bytes(&priv_key, curve, raw_priv); !ok {
+				log.errorf(
+					"ecdh/%s/%d: failed to deserialize private_key: %s %d %x",
+					alg_str,
+					test_vector.tc_id,
+					test_vector.private,
+					len(raw_priv),
+					raw_priv,
+				)
+				num_failed += 1
+				continue
+			}
+
+			if ok := ecdh.public_key_set_bytes(&pub_key, curve, raw_pub); !ok {
+				if is_nist {
+					if slice.contains(test_vector.flags, FLAG_COMPRESSED_POINT) {
+						num_passed += 1
+						continue
+					}
+					if slice.contains(test_vector.flags, FLAG_INVALID_CURVE) {
+						num_passed += 1
+						continue
+					}
+					if slice.contains(test_vector.flags, FLAG_INVALID_ENCODING) {
+						num_passed += 1
+						continue
+					}
+				}
+				log.errorf(
+					"ecdh/%s/%d: failed to deserialize public_key: %s",
+					alg_str,
+					test_vector.tc_id,
+					test_vector.public,
+				)
+				num_failed += 1
+				continue
+			}
+
+			shared := make([]byte, ecdh.SHARED_SECRET_SIZES[curve])
+
+			ok := ecdh.ecdh(&priv_key, &pub_key, shared)
+			if !ok {
+				if is_xdh && slice.contains(test_vector.flags, FLAG_ZERO_SHARED_SECRET) {
+					num_passed += 1
+					continue
+				}
+				x := transmute(string)(hex.encode(shared))
+				log.errorf(
+					"ecdh/%s/%d: ecdh failed",
+					alg_str,
+					test_vector.tc_id,
+				)
+				num_failed += 1
+				continue
+			}
+
+			ok = wycheproof.hexbytes_compare(test_vector.shared, shared)
+			// "acceptable" results are fine from here because we have
+			// checked for the all-zero shared secret XDH case already.
 			if !wycheproof.result_check(test_vector.result, ok, false) {
 				x := transmute(string)(hex.encode(shared))
 				log.errorf(
-					"xdh/%s/%d: shared: expected %s actual %s",
+					"ecdh/%s/%d: shared: expected %s actual %s",
 					alg_str,
 					test_vector.tc_id,
 					test_vector.shared,
@@ -1144,7 +1247,7 @@ test_xdh_impl :: proc(
 	assert(num_passed + num_failed + num_skipped == num_ran)
 
 	log.infof(
-		"xdh/%s: ran %d, passed %d, failed %d, skipped %d",
+		"ecdh/%s: ran %d, passed %d, failed %d, skipped %d",
 		alg_str,
 		num_ran,
 		num_passed,

@@ -43,6 +43,11 @@ result_is_valid :: proc(r: Result) -> bool {
 	return r == "valid"
 }
 
+result_is_invalid :: proc(r: Result) -> bool {
+	return r == "invalid"
+}
+
+
 // The type namings are not following Odin convention, to better match
 // the schema, though the fields do.
 
@@ -130,12 +135,12 @@ MacTestVector :: struct {
 	flags:   []string `json:"flags"`,
 }
 
-XdhTestGroup :: struct {
+EcdhTestGroup :: struct {
 	curve: string `json:"curve"`,
-	tests: []XdhTestVector `json:"tests"`,
+	tests: []EcdhTestVector `json:"tests"`,
 }
 
-XdhTestVector :: struct {
+EcdhTestVector :: struct {
 	tc_id:   int `json:"tcId"`,
 	comment: string `json:"comment"`,
 	public:  HexBytes `json:"public"`,
