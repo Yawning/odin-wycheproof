@@ -1125,16 +1125,6 @@ test_ecdh_impl :: proc(
 			raw_pub := wycheproof.hexbytes_decode(test_vector.public)
 			raw_priv := wycheproof.hexbytes_decode(test_vector.private)
 
-			if slice.contains(test_vector.flags, FLAG_PUBLIC_KEY_TOO_LONG) {
-				log.infof(
-					"ecdh/%s/%d: skipped, invalid sizes panic",
-					alg_str,
-					test_vector.tc_id,
-				)
-				num_skipped += 1
-				continue
-			}
-
 			curve: ecdh.Curve
 			priv_key: ecdh.Private_Key
 			pub_key: ecdh.Public_Key
@@ -1195,6 +1185,11 @@ test_ecdh_impl :: proc(
 						continue
 					}
 				}
+				if slice.contains(test_vector.flags, FLAG_PUBLIC_KEY_TOO_LONG) {
+					num_passed += 1
+					continue
+				}
+
 				log.errorf(
 					"ecdh/%s/%d: failed to deserialize public_key: %s",
 					alg_str,
