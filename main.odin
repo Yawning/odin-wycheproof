@@ -73,6 +73,7 @@ import "wycheproof"
 //   - x448_test.json
 // - crypto/_weierstrass
 //   - ecdh_secp256r1_ecpoint_test.json
+//   - ecdh_secp384r1_ecpoint_test.json
 //
 // Not covered (not in wycheproof):
 // - crypto/blake2b
@@ -1067,6 +1068,7 @@ test_ecdh :: proc(base_path: string) -> bool {
 
 	files := []string {
 		"ecdh_secp256r1_ecpoint_test.json",
+		"ecdh_secp384r1_ecpoint_test.json",
 		"x25519_test.json",
 		"x448_test.json",
 	}
@@ -1097,6 +1099,7 @@ test_ecdh_impl :: proc(
 	alg_str: string,
 ) -> bool {
 	ALG_P256 :: "secp256r1"
+	ALG_P384 :: "secp384r1"
 	ALG_X25519 :: "x25519"
 	ALG_X448 :: "x448"
 
@@ -1143,6 +1146,21 @@ test_ecdh_impl :: proc(
 					// left-pad.odin
 					tmp := make([]byte, 32)
 					copy(tmp[32-l:], raw_priv)
+					raw_priv = tmp
+				}
+				is_nist = true
+			case ALG_P384:
+				curve = .SECP384R1
+				// Ugh, ASN.1 :(
+				l := len(raw_priv)
+				if l == 49 {
+					if raw_priv[0] == 0 {
+						raw_priv = raw_priv[1:]
+					}
+				} else if l < 48 {
+					// left-pad.odin
+					tmp := make([]byte, 48)
+					copy(tmp[48-l:], raw_priv)
 					raw_priv = tmp
 				}
 				is_nist = true
