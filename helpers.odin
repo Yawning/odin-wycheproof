@@ -9,7 +9,9 @@ import "core:strings"
 panic_fn :: proc(arg: any)
 
 env_to_log_level :: proc() -> log.Level {
-	switch s := os.get_env("ODIN_LOG"); s {
+	s := os.get_env_alloc("ODIN_LOG", context.allocator)
+	defer delete(s)
+	switch s {
 	case "debug":
 		return .Debug
 	case "info":

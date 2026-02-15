@@ -52,8 +52,8 @@ result_is_invalid :: proc(r: Result) -> bool {
 // the schema, though the fields do.
 
 load :: proc(tvs: ^$T/TestVectors, fn: string) -> bool {
-	raw_json, ok := os.read_entire_file(fn)
-	if !ok {
+	raw_json, err := os.read_entire_file_from_path(fn, context.allocator)
+	if err != os.ERROR_NONE {
 		log.error("failed to load raw JSON")
 		return false
 	}
@@ -156,7 +156,7 @@ EddsaTestGroup :: struct {
 	public_key_pem: string `json:"publicKeyPem"`,
 	public_key_jwk: EddsaJwk `json:"publicKeyJwk"`,
 	type:           string `json:"type"`,
-	tests:          []EddsaTestVector `json:"tests"`,
+	tests:          []DsaTestVector `json:"tests"`,
 }
 
 EddsaKey :: struct {
@@ -173,7 +173,7 @@ EddsaJwk :: struct {
 	x:   string `json:"x"`,
 }
 
-EddsaTestVector :: struct {
+DsaTestVector :: struct {
 	tc_id:   int `json:"tcId"`,
 	comment: string `json:"comment"`,
 	msg:     HexBytes `json:"msg"`,

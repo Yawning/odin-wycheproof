@@ -4,7 +4,6 @@ import "core:encoding/hex"
 import "core:log"
 import "core:mem"
 import "core:os"
-import "core:path/filepath"
 import "core:slice"
 import "core:strings"
 
@@ -93,13 +92,13 @@ main :: proc() {
 		os.exit(1)
 	}
 
-	base_path := filepath.join([]string{os.args[1], "testvectors_v1"})
-	fi, err := os.stat(base_path)
+	base_path, _ := os.join_path([]string{os.args[1], "testvectors_v1"}, context.allocator)
+	fi, err := os.stat(base_path, context.allocator)
 	if err != os.ERROR_NONE {
 		log.errorf("failed to stat wycheproof testvectors directory '%s': %+v", base_path, err)
 		os.exit(1)
 	}
-	if !fi.is_dir {
+	if fi.type != .Directory {
 		log.errorf("wycheproof testvectors directory, isn't '%s'", base_path)
 		os.exit(1)
 	}
@@ -164,7 +163,7 @@ test_aead_aegis :: proc(base_path: string) -> bool {
 	for f, i in files {
 		mem.free_all() // Probably don't need this, but be safe.
 
-		fn := filepath.join([]string{base_path, f})
+		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
 		test_vectors: wycheproof.TestVectors(wycheproof.AeadTestGroup)
 		if !wycheproof.load(&test_vectors, fn) {
@@ -311,7 +310,7 @@ supported_aes_impls :: proc() -> [dynamic]aes.Implementation {
 }
 
 test_aead_aes_gcm :: proc(base_path: string) -> bool {
-	fn := filepath.join([]string{base_path, "aes_gcm_test.json"})
+	fn, _ := os.join_path([]string{base_path, "aes_gcm_test.json"}, context.allocator)
 
 	log.debug("aead/aes-gcm: starting")
 
@@ -474,7 +473,7 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 	for f, i in files {
 		mem.free_all() // Probably don't need this, but be safe.
 
-		fn := filepath.join([]string{base_path, f})
+		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
 		test_vectors: wycheproof.TestVectors(wycheproof.AeadTestGroup)
 		if !wycheproof.load(&test_vectors, fn) {
@@ -644,12 +643,12 @@ test_aead_deoxysii :: proc(base_path: string) -> bool {
 }
 
 test_eddsa_ed25519 :: proc(base_path: string) -> bool {
-	fn := filepath.join([]string{base_path, "ed25519_test.json"})
+	fn_, _ := os.join_path([]string{base_path, "ed25519_test.json"}, context.allocator)
 
 	log.debug("eddsa/ed25519: starting")
 
 	test_vectors: wycheproof.TestVectors(wycheproof.EddsaTestGroup)
-	if !wycheproof.load(&test_vectors, fn) {
+	if !wycheproof.load(&test_vectors, fn_) {
 		return false
 	}
 
@@ -723,7 +722,7 @@ test_hkdf :: proc(base_path: string) -> bool {
 	for f in files {
 		mem.free_all() // Probably don't need this, but be safe.
 
-		fn := filepath.join([]string{base_path, f})
+		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
 		test_vectors: wycheproof.TestVectors(wycheproof.HkdfTestGroup)
 		if !wycheproof.load(&test_vectors, fn) {
@@ -842,7 +841,7 @@ test_mac :: proc(base_path: string) -> bool {
 	for f in files {
 		mem.free_all() // Probably don't need this, but be safe.
 
-		fn := filepath.join([]string{base_path, f})
+		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
 		test_vectors: wycheproof.TestVectors(wycheproof.MacTestGroup)
 		if !wycheproof.load(&test_vectors, fn) {
@@ -967,7 +966,7 @@ test_pbkdf2 :: proc(base_path: string) -> bool {
 	for f in files {
 		mem.free_all() // Probably don't need this, but be safe.
 
-		fn := filepath.join([]string{base_path, f})
+		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
 		test_vectors: wycheproof.TestVectors(wycheproof.PbkdfTestGroup)
 		if !wycheproof.load(&test_vectors, fn) {
@@ -1077,7 +1076,7 @@ test_ecdh :: proc(base_path: string) -> bool {
 	for f in files {
 		mem.free_all() // Probably don't need this, but be safe.
 
-		fn := filepath.join([]string{base_path, f})
+		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
 		test_vectors: wycheproof.TestVectors(wycheproof.EcdhTestGroup)
 		if !wycheproof.load(&test_vectors, fn) {
