@@ -14,7 +14,9 @@ import "core:crypto/aes"
 import "core:crypto/chacha20"
 import "core:crypto/chacha20poly1305"
 import "core:crypto/ecdh"
+import "core:crypto/ecdsa"
 import "core:crypto/ed25519"
+import "core:crypto/hash"
 import "core:crypto/hkdf"
 import "core:crypto/hmac"
 import "core:crypto/kmac"
@@ -73,6 +75,9 @@ import "wycheproof"
 // - crypto/_weierstrass
 //   - ecdh_secp256r1_ecpoint_test.json
 //   - ecdh_secp384r1_ecpoint_test.json
+//   - ecdsa_secp256r1_sha256_test.json
+//   - ecdsa_secp256r1_sha512_test.json
+//   - ecdsa_secp384r1_sha384_test.json
 //
 // Not covered (not in wycheproof):
 // - crypto/blake2b
@@ -127,6 +132,7 @@ main :: proc() {
 		test_mac,
 		test_pbkdf2,
 		test_ecdh,
+		test_ecdsa,
 	}
 	for fn in test_fns {
 		all_ok &= fn(base_path)
@@ -701,6 +707,123 @@ test_eddsa_ed25519 :: proc(base_path: string) -> bool {
 
 	log.infof(
 		"eddsa/ed25519: ran %d, passed %d, failed %d, skipped %d",
+		num_ran,
+		num_passed,
+		num_failed,
+		num_skipped,
+	)
+
+	return num_failed == 0
+}
+
+test_ecdsa :: proc(base_path: string) -> bool {
+	files := []string {
+		"ecdsa_secp256r1_sha256_test.json",
+		"ecdsa_secp256r1_sha512_test.json",
+		"ecdsa_secp384r1_sha384_test.json",
+	}
+
+	allOk := true
+	for f in files {
+		mem.free_all() // Probably don't need this, but be safe.
+
+		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
+
+		test_vectors: wycheproof.Test_Vectors(wycheproof.Ecdsa_Test_Group)
+		if !wycheproof.load(&test_vectors, fn) {
+			allOk &= false
+			continue
+		}
+
+		allOk &= test_ecdsa_impl(&test_vectors)
+	}
+
+	return allOk
+}
+
+test_ecdsa_impl :: proc(test_vectors: ^wycheproof.Test_Vectors(wycheproof.Ecdsa_Test_Group)) -> bool {
+	curve_str := test_vectors.test_groups[0].public_key.curve
+	hash_str := test_vectors.test_groups[0].sha
+
+	curve_alg: ecdsa.Curve
+	switch curve_str {
+	case "secp256r1":
+		curve_alg = .SECP256R1
+	case "secp384r1":
+		curve_alg = .SECP384R1
+	case:
+		log.errorf("ecdsa: unsupported curve: %s", curve_str)
+	}
+
+	hash_alg: hash.Algorithm
+	switch hash_str {
+	case "SHA-256":
+		hash_alg = .SHA256
+	case "SHA-384":
+		hash_alg = .SHA384
+	case "SHA-512":
+		hash_alg = .SHA512
+	case:
+		log.errorf("ecdsa: unsupported hash: %s", hash_str)
+	}
+
+	log.debugf("ecdsa/%s/%s: starting", curve_str, hash_str)
+
+	num_ran, num_passed, num_failed, num_skipped: int
+	for &test_group, i in test_vectors.test_groups {
+		pk_bytes := wycheproof.hexbytes_decode(test_group.public_key.uncompressed)
+
+		pk: ecdsa.Public_Key
+		if !ecdsa.public_key_set_bytes(&pk, curve_alg, pk_bytes) {
+			log.errorf("ecdsa/%s/%s/%d: invalid public key: %s", curve_str, hash_str, i, test_group.public_key.uncompressed)
+			num_failed += len(test_group.tests)
+			continue
+		}
+
+		for &test_vector in test_group.tests {
+			num_ran += 1
+
+			if comment := test_vector.comment; comment != "" {
+				log.debugf(
+					"ecda/%s/%s/%d: %s: %+v",
+					curve_str,
+					hash_str,
+					test_vector.tc_id,
+					comment,
+					test_vector.flags,
+				)
+			} else {
+				log.debugf("ecdsa/%s/%s/%d: %+v", curve_str, hash_str, test_vector.tc_id, test_vector.flags)
+			}
+
+			msg := wycheproof.hexbytes_decode(test_vector.msg)
+			sig := wycheproof.hexbytes_decode(test_vector.sig)
+
+			ok := ecdsa.verify_asn1(&pk, hash_alg, msg, sig)
+			if !wycheproof.result_check(test_vector.result, ok) {
+				log.errorf(
+					"ecdsa/%s/%s/%d: verify failed: expected %s actual %v",
+					curve_str,
+					hash_str,
+					test_vector.tc_id,
+					test_vector.result,
+					ok,
+				)
+				num_failed += 1
+				continue
+			}
+
+			num_passed += 1
+		}
+	}
+
+	assert(num_ran == test_vectors.number_of_tests)
+	assert(num_passed + num_failed + num_skipped == num_ran)
+
+	log.infof(
+		"ecdsa/%s/%s: ran %d, passed %d, failed %d, skipped %d",
+		curve_str,
+		hash_str,
 		num_ran,
 		num_passed,
 		num_failed,
