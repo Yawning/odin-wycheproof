@@ -165,7 +165,7 @@ test_aead_aegis :: proc(base_path: string) -> bool {
 
 		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
-		test_vectors: wycheproof.TestVectors(wycheproof.AeadTestGroup)
+		test_vectors: wycheproof.Test_Vectors(wycheproof.Aead_Test_Group)
 		if !wycheproof.load(&test_vectors, fn) {
 			allOk &= false
 			continue
@@ -180,7 +180,7 @@ test_aead_aegis :: proc(base_path: string) -> bool {
 }
 
 test_aead_aegis_impl :: proc(
-	test_vectors: ^wycheproof.TestVectors(wycheproof.AeadTestGroup),
+	test_vectors: ^wycheproof.Test_Vectors(wycheproof.Aead_Test_Group),
 	impl: aes.Implementation,
 ) -> bool {
 	log.debug("aead/aegis/%v: starting", impl)
@@ -314,7 +314,7 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 
 	log.debug("aead/aes-gcm: starting")
 
-	test_vectors: wycheproof.TestVectors(wycheproof.AeadTestGroup)
+	test_vectors: wycheproof.Test_Vectors(wycheproof.Aead_Test_Group)
 	if !wycheproof.load(&test_vectors, fn) {
 		return false
 	}
@@ -329,7 +329,7 @@ test_aead_aes_gcm :: proc(base_path: string) -> bool {
 }
 
 test_aead_aes_gcm_impl :: proc(
-	test_vectors: ^wycheproof.TestVectors(wycheproof.AeadTestGroup),
+	test_vectors: ^wycheproof.Test_Vectors(wycheproof.Aead_Test_Group),
 	impl: aes.Implementation,
 ) -> bool {
 	log.debug("aead/aes-gcm/%v: starting", impl)
@@ -475,7 +475,7 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 
 		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
-		test_vectors: wycheproof.TestVectors(wycheproof.AeadTestGroup)
+		test_vectors: wycheproof.Test_Vectors(wycheproof.Aead_Test_Group)
 		if !wycheproof.load(&test_vectors, fn) {
 			allOk &= false
 			continue
@@ -490,7 +490,7 @@ test_aead_chacha20_poly1305 :: proc(base_path: string) -> bool {
 }
 
 test_aead_chacha20_poly1305_impl :: proc(
-	test_vectors: ^wycheproof.TestVectors(wycheproof.AeadTestGroup),
+	test_vectors: ^wycheproof.Test_Vectors(wycheproof.Aead_Test_Group),
 	is_xchacha: bool,
 	impl: chacha20.Implementation,
 ) -> bool {
@@ -647,7 +647,7 @@ test_eddsa_ed25519 :: proc(base_path: string) -> bool {
 
 	log.debug("eddsa/ed25519: starting")
 
-	test_vectors: wycheproof.TestVectors(wycheproof.EddsaTestGroup)
+	test_vectors: wycheproof.Test_Vectors(wycheproof.Eddsa_Test_Group)
 	if !wycheproof.load(&test_vectors, fn_) {
 		return false
 	}
@@ -724,7 +724,7 @@ test_hkdf :: proc(base_path: string) -> bool {
 
 		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
-		test_vectors: wycheproof.TestVectors(wycheproof.HkdfTestGroup)
+		test_vectors: wycheproof.Test_Vectors(wycheproof.Hkdf_Test_Group)
 		if !wycheproof.load(&test_vectors, fn) {
 			allOk &= false
 			continue
@@ -736,7 +736,7 @@ test_hkdf :: proc(base_path: string) -> bool {
 	return allOk
 }
 
-test_hkdf_impl :: proc(test_vectors: ^wycheproof.TestVectors(wycheproof.HkdfTestGroup)) -> bool {
+test_hkdf_impl :: proc(test_vectors: ^wycheproof.Test_Vectors(wycheproof.Hkdf_Test_Group)) -> bool {
 	PREFIX_HKDF :: "HKDF-"
 	FLAG_SIZE_TOO_LARGE :: "SizeTooLarge"
 
@@ -843,7 +843,7 @@ test_mac :: proc(base_path: string) -> bool {
 
 		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
-		test_vectors: wycheproof.TestVectors(wycheproof.MacTestGroup)
+		test_vectors: wycheproof.Test_Vectors(wycheproof.Mac_Test_Group)
 		if !wycheproof.load(&test_vectors, fn) {
 			allOk &= false
 			continue
@@ -855,7 +855,7 @@ test_mac :: proc(base_path: string) -> bool {
 	return allOk
 }
 
-test_mac_impl :: proc(test_vectors: ^wycheproof.TestVectors(wycheproof.MacTestGroup)) -> bool {
+test_mac_impl :: proc(test_vectors: ^wycheproof.Test_Vectors(wycheproof.Mac_Test_Group)) -> bool {
 	PREFIX_HMAC :: "HMAC"
 	PREFIX_KMAC :: "KMAC"
 
@@ -968,7 +968,7 @@ test_pbkdf2 :: proc(base_path: string) -> bool {
 
 		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
-		test_vectors: wycheproof.TestVectors(wycheproof.PbkdfTestGroup)
+		test_vectors: wycheproof.Test_Vectors(wycheproof.Pbkdf_Test_Group)
 		if !wycheproof.load(&test_vectors, fn) {
 			allOk &= false
 			continue
@@ -981,7 +981,7 @@ test_pbkdf2 :: proc(base_path: string) -> bool {
 }
 
 test_pbkdf2_impl :: proc(
-	test_vectors: ^wycheproof.TestVectors(wycheproof.PbkdfTestGroup),
+	test_vectors: ^wycheproof.Test_Vectors(wycheproof.Pbkdf_Test_Group),
 ) -> bool {
 	PREFIX_PBKDF_HMAC :: "PBKDF2-HMAC"
 	FLAG_LARGE_ITERATION_COUNT :: "LargeIterationCount"
@@ -1078,7 +1078,7 @@ test_ecdh :: proc(base_path: string) -> bool {
 
 		fn, _ := os.join_path([]string{base_path, f}, context.allocator)
 
-		test_vectors: wycheproof.TestVectors(wycheproof.EcdhTestGroup)
+		test_vectors: wycheproof.Test_Vectors(wycheproof.Ecdh_Test_Group)
 		if !wycheproof.load(&test_vectors, fn) {
 			allOk &= false
 			continue
@@ -1094,7 +1094,7 @@ test_ecdh :: proc(base_path: string) -> bool {
 }
 
 test_ecdh_impl :: proc(
-	test_vectors: ^wycheproof.TestVectors(wycheproof.EcdhTestGroup),
+	test_vectors: ^wycheproof.Test_Vectors(wycheproof.Ecdh_Test_Group),
 	alg_str: string,
 ) -> bool {
 	ALG_P256 :: "secp256r1"
